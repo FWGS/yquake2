@@ -601,9 +601,9 @@ R_PolygonDrawSpans(espan_t *pspan, int iswater, float d_ziorigin, float d_zistep
 
 	s_spanletvars.pbase = cacheblock;
 
-	if ( iswater & SURF_WARP)
-		r_turb_turb = sintable + ((int)(r_newrefdef.time*SPEED)&(CYCLE-1));
-	else
+	//if ( iswater & SURF_WARP)
+	//	r_turb_turb = sintable + ((int)(r_newrefdef.time*SPEED)&(CYCLE-1));
+	//else
 		// iswater & SURF_FLOWING
 		r_turb_turb = blanktable;
 
@@ -1153,6 +1153,8 @@ R_PolygonCalculateGradients (float *p_ziorigin, float *p_zistepu, float *p_ziste
 	*p_ziorigin = d_ziorigin;
 }
 
+msurface_t *currentsurface;
+
 /*
 ** R_DrawPoly
 **
@@ -1199,9 +1201,19 @@ R_DrawPoly(int iswater, espan_t *spans)
 	if (ymin >= ymax)
 		return; // doesn't cross any scans at all
 
-	cachewidth = r_polydesc.pixel_width;
-	cacheblock = r_polydesc.pixels;
-
+	if( iswater )
+	{
+		void D_GoldSrcVodichka(float timestep, image_t *image);
+		
+		D_GoldSrcVodichka( 0.1, currentsurface->texinfo->image );
+		//iswater &= ~(SURF_WARP);
+	}
+	else
+	{
+		cachewidth = r_polydesc.pixel_width;
+		cacheblock = r_polydesc.pixels;
+	}
+	
 	// copy the first vertex to the last vertex, so we don't have to deal with
 	// wrapping
 	nump = r_polydesc.nump;
@@ -1230,6 +1242,8 @@ R_DrawAlphaSurfaces(const entity_t *currententity)
 
 	while ( s )
 	{
+		currentsurface = s;
+		
 		R_BuildPolygonFromSurface(currententity, currentmodel, s);
 
 		// pass down all the texinfo flags, not just SURF_WARP.

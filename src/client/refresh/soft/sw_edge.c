@@ -846,6 +846,127 @@ D_BackgroundSurf (surf_t *s)
 	D_DrawZSpans (s->spans, -0.9, 0, 0);
 }
 
+#define VODICHKA_CACHEWIDTH 128
+//#define VODICHKA_CACHEWIDTH 64
+#define VODICHKA_TEXSIZE ( VODICHKA_CACHEWIDTH * VODICHKA_CACHEWIDTH )
+
+float updatetime = 0.0, oldupdatetime = 0.0;
+short buf1[VODICHKA_TEXSIZE] = { 0 }, buf2[VODICHKA_TEXSIZE] = { 0 };
+pixel_t newcacheblock[VODICHKA_TEXSIZE];
+short *pbuf = buf1, *oldbuf = buf2;
+
+float InitVodichkaTime( void )
+{
+	updatetime = oldupdatetime = r_newrefdef.time - 0.1;
+	return 0.1;
+}
+
+void SwapBufs( void )
+{
+	short *temp = pbuf;
+	pbuf   = oldbuf;
+	oldbuf = temp;
+}
+
+void SpawnNewRipple( int x, int y, int val )
+{
+#define PIXEL( x, y ) ( ((x) & 0x7f) + (((y) & 0x7f) << 7) )
+//#define PIXEL( x, y ) ( ((x) & 0xf) + ((y) & 0xf * 0x10) )
+	
+	oldbuf[PIXEL( x, y )] += (short)val;
+	
+	short sval = (short)(val >> 2); //16-bit pixel_t
+//	val = (pixel_t)(val >> 1);
+	
+	oldbuf[PIXEL( x + 1, y )] += sval;
+	oldbuf[PIXEL( x - 1, y )] += sval;
+	oldbuf[PIXEL( x, y + 1 )] += sval;
+	oldbuf[PIXEL( x, y - 1 )] += sval;
+}
+
+void RunVodichkaAnimation(short *oldbuf,short *pbuf)
+{
+	unsigned int i;
+	
+	for( i = 128; i - 127 < 0x4000; i++, pbuf++ )
+	{
+		int val = (((int)oldbuf[(i - 256) & 0x3fff] +
+					(int)oldbuf[(i - 129) & 0x3fff] + 
+					(int)oldbuf[(i - 127) & 0x3fff] + 
+					(int)oldbuf[i & 0x3fff]) >> 1) - (int)*pbuf;
+		*pbuf = (short)val - (short)(val >> 6);
+	}
+	return;
+}
+
+int FUN_01d51af0(int param_1)
+
+{
+	int iVar1;
+	
+	iVar1 = 0;
+	for (param_1 = param_1 >> 1; param_1 != 0; param_1 = param_1 >> 1) {
+		iVar1 = iVar1 + 1;
+	}
+	return iVar1;
+}
+
+void
+D_GoldSrcVodichka(float timestep, image_t *image)
+{
+	float time;
+	byte *pixels = image->pixels[0];
+	
+	time = r_newrefdef.time - updatetime;
+	if( 0.0 <= time )
+	{
+		if( time < 0.05 )
+			time = 0;
+	}
+	else time = InitVodichkaTime();
+	
+	updatetime += time;
+	
+	if( time > 0.0 )
+	{
+		SwapBufs( );
+		
+		if( updatetime - oldupdatetime > timestep )
+		{
+			int x, y, val;
+			
+			oldupdatetime = updatetime;
+			
+			x = randk() & 0x7fff;
+			y = randk() & 0x7fff;
+			val = randk() & 0x3ff;
+			
+			//R_Printf( PRINT_ALL, "MEOW\n" );
+			
+			SpawnNewRipple( x, y, val );
+		}
+		
+		RunVodichkaAnimation( oldbuf, pbuf );
+	}
+	
+	byte bVar3 = FUN_01d51af0(image->width);
+	if( time > 0.0 )
+	{
+		int i;
+		for( i = 0; i < VODICHKA_TEXSIZE; i++ )
+		{
+			int val = pbuf[i];
+			
+			newcacheblock[i] = pixels[
+				((i + (val >> 4)) & (image->width - 1)) +
+				((((i >> 7) - (val >> 4)) & (image->height - 1)) << (bVar3 & 0x1f))];
+		}
+	}
+	
+	cacheblock = newcacheblock;
+	cachewidth = VODICHKA_CACHEWIDTH;
+}
+
 /*
 =================
 D_TurbulentSurf
@@ -876,6 +997,7 @@ D_TurbulentSurf(surf_t *s)
 	}
 
 	D_CalcGradients (pface, s->d_ziorigin, s->d_zistepu, s->d_zistepv);
+	D_GoldSrcVodichka(0.1, pface->texinfo->image);
 
 	//============
 	// textures that aren't warping are just flowing. Use NonTurbulentPow2 instead

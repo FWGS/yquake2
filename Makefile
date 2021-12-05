@@ -956,6 +956,7 @@ REFSOFT_OBJS_ := \
 	src/client/refresh/files/wal.o \
 	src/client/refresh/files/pvs.o \
 	src/common/shared/shared.o \
+	src/common/shared/rand.o \
 	src/common/md4.o
 
 ifeq ($(YQ2_OSTYPE), Windows)
