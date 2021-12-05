@@ -846,9 +846,12 @@ D_BackgroundSurf (surf_t *s)
 	D_DrawZSpans (s->spans, -0.9, 0, 0);
 }
 
-#define VODICHKA_CACHEWIDTH 128
-//#define VODICHKA_CACHEWIDTH 64
+//#define VODICHKA_CACHEWIDTH_BITS 7
+#define VODICHKA_CACHEWIDTH_BITS 6
+#define VODICHKA_CACHEWIDTH (1<<VODICHKA_CACHEWIDTH_BITS)
+#define VODICHKA_CACHEWIDTH_MASK ((VODICHKA_CACHEWIDTH)-1)
 #define VODICHKA_TEXSIZE ( VODICHKA_CACHEWIDTH * VODICHKA_CACHEWIDTH )
+#define VODICHKA_TEXSIZE_MASK (VODICHKA_TEXSIZE-1)
 
 float updatetime = 0.0, oldupdatetime = 0.0;
 short buf1[VODICHKA_TEXSIZE] = { 0 }, buf2[VODICHKA_TEXSIZE] = { 0 };
@@ -870,8 +873,11 @@ void SwapBufs( void )
 
 void SpawnNewRipple( int x, int y, int val )
 {
-#define PIXEL( x, y ) ( ((x) & 0x7f) + (((y) & 0x7f) << 7) )
-//#define PIXEL( x, y ) ( ((x) & 0xf) + ((y) & 0xf * 0x10) )
+#if VODICHKA_CACHEWIDTH == 128
+#define PIXEL( x, y ) ( ((x) & 0x7f) + (((y) & 0x7f) << VODICHKA_CACHEWIDTH_BITS) )
+#elif VODICHKA_CACHEWIDTH == 64
+#define PIXEL( x, y ) ( ((x) & 0x3f) + (((y) & 0x3f) << VODICHKA_CACHEWIDTH_BITS) )
+#endif
 	
 	oldbuf[PIXEL( x, y )] += (short)val;
 	
@@ -888,27 +894,15 @@ void RunVodichkaAnimation(short *oldbuf,short *pbuf)
 {
 	unsigned int i;
 	
-	for( i = 128; i - 127 < 0x4000; i++, pbuf++ )
+	for( i = VODICHKA_CACHEWIDTH; i - (VODICHKA_CACHEWIDTH-1) < VODICHKA_TEXSIZE; i++, pbuf++ )
 	{
-		int val = (((int)oldbuf[(i - 256) & 0x3fff] +
-					(int)oldbuf[(i - 129) & 0x3fff] + 
-					(int)oldbuf[(i - 127) & 0x3fff] + 
-					(int)oldbuf[i & 0x3fff]) >> 1) - (int)*pbuf;
+		int val = (((int)oldbuf[(i - (VODICHKA_CACHEWIDTH*2)) & VODICHKA_TEXSIZE_MASK] +
+					(int)oldbuf[(i - (VODICHKA_CACHEWIDTH+1)) & VODICHKA_TEXSIZE_MASK] + 
+					(int)oldbuf[(i - (VODICHKA_CACHEWIDTH-1)) & VODICHKA_TEXSIZE_MASK] + 
+					(int)oldbuf[i & VODICHKA_TEXSIZE_MASK]) >> 1) - (int)*pbuf; // shift for ripple size
 		*pbuf = (short)val - (short)(val >> 6);
 	}
 	return;
-}
-
-int FUN_01d51af0(int param_1)
-
-{
-	int iVar1;
-	
-	iVar1 = 0;
-	for (param_1 = param_1 >> 1; param_1 != 0; param_1 = param_1 >> 1) {
-		iVar1 = iVar1 + 1;
-	}
-	return iVar1;
 }
 
 void
@@ -941,15 +935,13 @@ D_GoldSrcVodichka(float timestep, image_t *image)
 			y = randk() & 0x7fff;
 			val = randk() & 0x3ff;
 			
-			//R_Printf( PRINT_ALL, "MEOW\n" );
-			
 			SpawnNewRipple( x, y, val );
 		}
 		
 		RunVodichkaAnimation( oldbuf, pbuf );
 	}
 	
-	byte bVar3 = FUN_01d51af0(image->width);
+	byte bVar3 = __builtin_ctz(image->width);
 	if( time > 0.0 )
 	{
 		int i;
@@ -959,7 +951,7 @@ D_GoldSrcVodichka(float timestep, image_t *image)
 			
 			newcacheblock[i] = pixels[
 				((i + (val >> 4)) & (image->width - 1)) +
-				((((i >> 7) - (val >> 4)) & (image->height - 1)) << (bVar3 & 0x1f))];
+				((((i >> VODICHKA_CACHEWIDTH_BITS) - (val >> 4)) & (image->height - 1)) << (bVar3 & 0x1f))];
 		}
 	}
 	
